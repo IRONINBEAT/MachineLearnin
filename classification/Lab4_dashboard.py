@@ -1,10 +1,16 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.metrics import (
+    r2_score, mean_squared_error, confusion_matrix, 
+    classification_report, roc_curve, auc, 
+    precision_recall_curve, average_precision_score
+)
 from sklearn.decomposition import PCA
+from sklearn.svm import SVC
+from sklearn.inspection import permutation_importance
 from scipy import stats
 import statsmodels.api as sm
 from statsmodels.formula.api import ols
@@ -13,6 +19,7 @@ import dash
 from dash import Dash, dcc, html, dash_table, Input, Output
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # ------------------------------
 # 1. ЗАГРУЗКА ДАННЫХ
@@ -29,6 +36,10 @@ df_scaled[num_cols] = scaler.fit_transform(df[num_cols])
 
 # вычисляем корреляционную матрицу
 corr_matrix = df[num_cols].corr().round(3)
+
+# Кодируем целевую переменную для классификации
+label_encoder = LabelEncoder()
+df['Class_encoded'] = label_encoder.fit_transform(df[target_col])
 
 # ------------------------------
 # 2. ОПИСАТЕЛЬНАЯ СТАТИСТИКА
@@ -52,7 +63,7 @@ for col in desc_stats.columns:
 app = Dash(__name__)
 
 app.layout = html.Div([
-    html.H1("Дашборд: Дескриптивный анализ", style={"textAlign": "center"}),
+    html.H1("Дашборд: Дескриптивный анализ", style={"textAlign": "center"}),
 
     html.H2("1. Выбор признака для гистограммы"),
 
@@ -64,7 +75,7 @@ app.layout = html.Div([
         style={"width": "300px"}
     ),
 
-    # контейнер для гистограммы + pie chart + корреляционная матрица
+    # контейнер для гистограммы + pie chart + корреляционная матрица
     html.Div(id="single-row-container"),
 
     html.Br(),
@@ -79,9 +90,9 @@ app.layout = html.Div([
 
     html.Div(id="all-histograms-container"),
 
-    html.H2("2. Boxplot и таблица описательной статистики"),
+    html.H2("2. Boxplot и таблица описательной статистики"),
 
-    # BOX + TABLE в одной строке
+    # BOX + TABLE в одной строке
     html.Div([
 
         html.Div(
@@ -122,7 +133,7 @@ app.layout = html.Div([
             multi=True,
             clearable=False,
             style={"width": "80%", "margin": "10px 0"}
-        )
+        ),
     ]),
 
     html.Div(id="scatter-matrix-container"),
@@ -139,7 +150,7 @@ app.layout = html.Div([
                 value=num_cols[0],
                 clearable=False,
                 style={"width": "90%", "margin": "10px 0"}
-            )
+            ),
         ], style={"width": "48%", "display": "inline-block"}),
 
         html.Div([
@@ -150,7 +161,7 @@ app.layout = html.Div([
                 value=target_col,
                 clearable=False,
                 style={"width": "90%", "margin": "10px 0"}
-            )
+            ),
         ], style={"width": "48%", "display": "inline-block", "float": "right"})
     ]),
 
@@ -173,7 +184,7 @@ app.layout = html.Div([
                 value=3,
                 marks={i: str(i) for i in range(2, min(8, len(num_cols)) + 1)},
                 step=1
-            )
+            ),
         ], style={"width": "48%", "display": "inline-block"}),
 
         html.Div([
@@ -187,7 +198,7 @@ app.layout = html.Div([
                 value="none",
                 clearable=False,
                 style={"width": "90%", "margin": "10px 0"}
-            )
+            ),
         ], style={"width": "48%", "display": "inline-block", "float": "right"})
     ]),
 
@@ -209,7 +220,7 @@ app.layout = html.Div([
                 value=num_cols[0],
                 clearable=False,
                 style={"width": "90%", "margin": "10px 0"}
-            )
+            ),
         ], style={"width": "48%", "display": "inline-block"}),
 
         html.Div([
@@ -220,7 +231,7 @@ app.layout = html.Div([
                 value=num_cols[1] if len(num_cols) > 1 else num_cols[0],
                 clearable=False,
                 style={"width": "90%", "margin": "10px 0"}
-            )
+            ),
         ], style={"width": "48%", "display": "inline-block", "float": "right"})
     ]),
 
@@ -228,10 +239,60 @@ app.layout = html.Div([
     html.Div(id="regression-metrics", style={"margin": "20px 0"}),
 
     # Графики регрессии
-    html.Div(id="regression-plots-container")
+    html.Div(id="regression-plots-container"),
+
+    # ==================== НОВЫЙ РАЗДЕЛ: КЛАССИФИКАЦИЯ ====================
+    html.H2("7. Классификация (SVM)"),
+
+    # Параметры SVM
+    html.Div([
+        html.Div([
+            html.Label("Ядро SVM:"),
+            dcc.Dropdown(
+                id="svm-kernel",
+                options=[
+                    {"label": "Linear (линейное)", "value": "linear"},
+                    {"label": "RBF (радиальное)", "value": "rbf"},
+                    {"label": "Polynomial (полиномиальное)", "value": "poly"}
+                ],
+                value="rbf",
+                clearable=False,
+                style={"width": "90%", "margin": "10px 0"}
+            ),
+        ], style={"width": "30%", "display": "inline-block"}),
+
+        html.Div([
+            html.Label("Параметр C (регуляризация):"),
+            dcc.Slider(
+                id="svm-C",
+                min=-2,
+                max=2,
+                value=0,
+                marks={i: f'{10**i}' for i in range(-2, 3)},
+                step=0.5
+            ),
+        ], style={"width": "30%", "display": "inline-block", "marginLeft": "3%"}),
+
+        html.Div([
+            html.Label("Размер тестовой выборки (%):"),
+            dcc.Slider(
+                id="test-size",
+                min=10,
+                max=50,
+                value=30,
+                marks={i: f'{i}%' for i in range(10, 51, 10)},
+                step=5
+            ),
+        ], style={"width": "30%", "display": "inline-block", "marginLeft": "3%"})
+    ]),
+
+    # Метрики классификации
+    html.Div(id="classification-metrics", style={"margin": "20px 0"}),
+
+    # Графики классификации
+    html.Div(id="classification-plots-container"),
 
 ])
-
 
 # ------------------------------
 # 4. CALLBACKS
@@ -243,6 +304,7 @@ app.layout = html.Div([
     Input("feature-dropdown", "value")
 )
 def update_single_histogram(selected_col):
+
     # Гистограмма
     fig_hist = px.histogram(df, x=selected_col, nbins=30,
                             title=f"Гистограмма: {selected_col}")
@@ -251,7 +313,7 @@ def update_single_histogram(selected_col):
     fig_pie = px.pie(df, names=target_col,
                      title="Распределение видов изюма")
 
-    # Тепловая карта корреляционной матрицы
+    # Тепловая карта корреляционной матрицы
     fig_heatmap = go.Figure(data=go.Heatmap(
         z=corr_matrix.values,
         x=corr_matrix.columns,
@@ -265,7 +327,7 @@ def update_single_histogram(selected_col):
         hoverinfo="none",
         showscale=True
     ))
-    
+
     fig_heatmap.update_layout(
         title="Корреляционная матрица",
         xaxis_title="Признаки",
@@ -348,7 +410,7 @@ def toggle_all_histograms(n_clicks):
 def update_scatter_matrix(selected_features):
     if not selected_features or len(selected_features) < 2:
         return html.Div("Выберите как минимум 2 признака для построения диаграмм рассеивания")
-    
+
     # Создаем scatter matrix
     fig_scatter = px.scatter_matrix(
         df,
@@ -357,14 +419,14 @@ def update_scatter_matrix(selected_features):
         title=f"Попарные диаграммы рассеивания ({len(selected_features)} признаков)",
         height=800
     )
-    
-    # Улучшаем читаемость подписей
+
+    # Улучшаем читаемость подписей
     fig_scatter.update_traces(diagonal_visible=False)
     fig_scatter.update_layout(
         font_size=10,
         title_font_size=16
     )
-    
+
     return dcc.Graph(figure=fig_scatter)
 
 
@@ -380,37 +442,37 @@ def update_anova_analysis(feature, group):
     groups = df[group].unique()
     if len(groups) < 2:
         return "Группирующая переменная должна содержать как минимум 2 группы", ""
-    
+
     # Подготовка данных для ANOVA
     group_data = [df[df[group] == g][feature] for g in groups]
-    
+
     # Односторонний ANOVA
     f_stat, p_value = stats.f_oneway(*group_data)
-    
+
     # Дополнительная статистика по группам
     group_stats = df.groupby(group)[feature].agg(['count', 'mean', 'std', 'min', 'max']).round(3)
     group_stats = group_stats.reset_index()
-    
+
     # Создание графиков
     # 1. Boxplot по группам
     fig_boxplot = px.box(
-        df, x=group, y=feature, 
+        df, x=group, y=feature,
         color=group,
         title=f"Boxplot: {feature} по группам {group}",
         points="all"
     )
     fig_boxplot.update_layout(height=400)
-    
+
     # 2. Violin plot
     fig_violin = px.violin(
-        df, x=group, y=feature, 
+        df, x=group, y=feature,
         color=group,
         title=f"Violin plot: {feature} по группам {group}",
         box=True,
         points="all"
     )
     fig_violin.update_layout(height=400)
-    
+
     # 3. Bar plot со средними значениями
     fig_bar = px.bar(
         group_stats, x=group, y='mean',
@@ -421,17 +483,16 @@ def update_anova_analysis(feature, group):
     )
     fig_bar.update_traces(texttemplate='%{text:.3f}', textposition='outside')
     fig_bar.update_layout(height=400)
-    
+
     # Результаты ANOVA
     significance = "статистически значимые" if p_value < 0.05 else "нестатистически значимые"
-    
     anova_results = html.Div([
         html.Div([
             html.H4("Результаты дисперсионного анализа (ANOVA)"),
             html.P(f"F-статистика: {f_stat:.4f}"),
             html.P(f"p-значение: {p_value:.4f}"),
-            html.P(f"Результат: {significance} различия между группами", 
-                  style={'color': 'red' if p_value < 0.05 else 'green', 'fontWeight': 'bold'}),
+            html.P(f"Результат: {significance} различия между группами",
+                   style={'color': 'red' if p_value < 0.05 else 'green', 'fontWeight': 'bold'}),
             html.P(f"Уровень значимости: α = 0.05"),
             html.Br(),
             html.H5("Описательная статистика по группам:"),
@@ -441,7 +502,7 @@ def update_anova_analysis(feature, group):
                 style_table={"overflowX": "auto"},
                 style_cell={"textAlign": "center", 'padding': '5px'},
                 style_header={'backgroundColor': 'lightgray', 'fontWeight': 'bold'}
-            )
+            ),
         ], style={
             'border': '1px solid #ddd',
             'padding': '15px',
@@ -449,7 +510,7 @@ def update_anova_analysis(feature, group):
             'backgroundColor': '#f9f9f9'
         })
     ])
-    
+
     # Контейнер с графиками ANOVA
     plots_html = html.Div([
         html.Div([
@@ -458,7 +519,7 @@ def update_anova_analysis(feature, group):
             html.Div(dcc.Graph(figure=fig_bar), style={"width": "33%", "display": "inline-block"})
         ], style={"display": "flex", "flexDirection": "row", "justifyContent": "space-around"})
     ])
-    
+
     return anova_results, plots_html
 
 
@@ -474,7 +535,7 @@ def update_factor_analysis(n_components, rotation):
     pca = PCA(n_components=n_components)
     X_scaled = StandardScaler().fit_transform(df[num_cols])
     principal_components = pca.fit_transform(X_scaled)
-    
+
     # Создаем DataFrame с нагрузками
     loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
     loadings_df = pd.DataFrame(
@@ -482,14 +543,14 @@ def update_factor_analysis(n_components, rotation):
         columns=[f'Factor {i+1}' for i in range(n_components)],
         index=num_cols
     ).round(3)
-    
+
     # Объясненная дисперсия
     explained_variance = pca.explained_variance_ratio_
     cumulative_variance = np.cumsum(explained_variance)
-    
+
     # Собственные значения
     eigenvalues = pca.explained_variance_
-    
+
     # Создание графиков
     # 1. Scree plot (график каменистой осыпи)
     fig_scree = go.Figure()
@@ -507,7 +568,7 @@ def update_factor_analysis(n_components, rotation):
         yaxis_title='Собственное значение',
         height=400
     )
-    
+
     # 2. График объясненной дисперсии
     fig_variance = go.Figure()
     fig_variance.add_trace(go.Bar(
@@ -530,7 +591,7 @@ def update_factor_analysis(n_components, rotation):
         yaxis_title='Доля объясненной дисперсии',
         height=400
     )
-    
+
     # 3. Heatmap факторных нагрузок
     fig_heatmap = go.Figure(data=go.Heatmap(
         z=loadings_df.values,
@@ -551,12 +612,12 @@ def update_factor_analysis(n_components, rotation):
         yaxis_title='Признаки',
         height=500
     )
-    
+
     # 4. Biplot (первые два фактора)
     if n_components >= 2:
         # Создаем biplot
         fig_biplot = go.Figure()
-        
+
         # Добавляем точки наблюдений
         fig_biplot.add_trace(go.Scatter(
             x=principal_components[:, 0],
@@ -571,7 +632,7 @@ def update_factor_analysis(n_components, rotation):
             text=df[target_col],
             name='Наблюдения'
         ))
-        
+
         # Добавляем вектора нагрузок
         scale_factor = 3
         for i, feature in enumerate(num_cols):
@@ -591,7 +652,7 @@ def update_factor_analysis(n_components, rotation):
                 textposition="middle right",
                 showlegend=False
             ))
-        
+
         fig_biplot.update_layout(
             title='Biplot (Факторы 1 и 2)',
             xaxis_title=f'Factor 1 ({explained_variance[0]:.1%})',
@@ -604,7 +665,7 @@ def update_factor_analysis(n_components, rotation):
             title='Biplot недоступен (нужно минимум 2 фактора)',
             height=400
         )
-    
+
     # Результаты факторного анализа
     factor_results = html.Div([
         html.Div([
@@ -620,7 +681,7 @@ def update_factor_analysis(n_components, rotation):
                 style_cell={"textAlign": "center", 'padding': '5px'},
                 style_header={'backgroundColor': 'lightgray', 'fontWeight': 'bold'},
                 page_size=10
-            )
+            ),
         ], style={
             'border': '1px solid #ddd',
             'padding': '15px',
@@ -628,19 +689,20 @@ def update_factor_analysis(n_components, rotation):
             'backgroundColor': '#f9f9f9'
         })
     ])
-    
+
     # Контейнер с графиками факторного анализа
     plots_html = html.Div([
         html.Div([
             html.Div(dcc.Graph(figure=fig_scree), style={"width": "50%", "display": "inline-block"}),
             html.Div(dcc.Graph(figure=fig_variance), style={"width": "50%", "display": "inline-block"})
         ], style={"display": "flex", "flexDirection": "row", "justifyContent": "space-around"}),
+
         html.Div([
             html.Div(dcc.Graph(figure=fig_heatmap), style={"width": "50%", "display": "inline-block"}),
             html.Div(dcc.Graph(figure=fig_biplot), style={"width": "50%", "display": "inline-block"})
         ], style={"display": "flex", "flexDirection": "row", "justifyContent": "space-around", "marginTop": "20px"})
     ])
-    
+
     return factor_results, plots_html
 
 
@@ -654,50 +716,49 @@ def update_factor_analysis(n_components, rotation):
 def update_regression_analysis(target, feature):
     if target == feature:
         return "Целевая переменная и признак не должны совпадать", ""
-    
+
     # Подготовка данных
     X = df[[feature]].values
     y = df[target].values
-    
+
     # Разделение на train/test
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-    
+
     # Обучение модели
     model = LinearRegression()
     model.fit(X_train, y_train)
-    
+
     # Предсказания
     y_pred = model.predict(X)
     y_test_pred = model.predict(X_test)
-    
+
     # Метрики
     r2 = r2_score(y_test, y_test_pred)
     mse = mean_squared_error(y_test, y_test_pred)
     rmse = np.sqrt(mse)
-    
+
     # Остатки
     residuals = y_test - y_test_pred
-    
+
     # Формирование уравнения регрессии
     coef = model.coef_[0]
     intercept = model.intercept_
-    
+
     # Определяем знак для красивого отображения уравнения
     sign = "+" if intercept >= 0 else "-"
     abs_intercept = abs(intercept)
-    
     equation = f"y = {coef:.4f}·x {sign} {abs_intercept:.4f}"
-    
+
     # Создание графиков
     # 1. Scatterplot с линией регрессии
     fig_scatter = px.scatter(
-        df, x=feature, y=target, 
-        title=f"Линейная регрессия: {feature} vs {target}<br><sup>Уравнение: {equation}</sup>",
+        df, x=feature, y=target,
+        title=f"Линейная регрессия: {feature} vs {target}<br>Уравнение: {equation}",
         trendline="ols",
         trendline_color_override="red"
     )
     fig_scatter.update_layout(height=400)
-    
+
     # 2. График остатков
     fig_residuals = px.scatter(
         x=y_test_pred, y=residuals,
@@ -706,23 +767,24 @@ def update_regression_analysis(target, feature):
     )
     fig_residuals.add_hline(y=0, line_dash="dash", line_color="red")
     fig_residuals.update_layout(height=400)
-    
+
     # 3. График предсказанных vs фактических значений
     fig_actual_vs_pred = px.scatter(
         x=y_test, y=y_test_pred,
         title="Предсказанные vs Фактические значения",
         labels={"x": "Фактические значения", "y": "Предсказанные значения"}
     )
+
     # Добавляем линию идеального предсказания
     min_val = min(y_test.min(), y_test_pred.min())
     max_val = max(y_test.max(), y_test_pred.max())
     fig_actual_vs_pred.add_trace(
-        go.Scatter(x=[min_val, max_val], y=[min_val, max_val], 
-                  mode='lines', line=dict(dash='dash', color='red'),
-                  name='Идеальное предсказание')
+        go.Scatter(x=[min_val, max_val], y=[min_val, max_val],
+                   mode='lines', line=dict(dash='dash', color='red'),
+                   name='Идеальное предсказание')
     )
     fig_actual_vs_pred.update_layout(height=400)
-    
+
     # Метрики модели и уравнение регрессии в виде карточек
     metrics_html = html.Div([
         html.Div([
@@ -741,7 +803,7 @@ def update_regression_analysis(target, feature):
             'display': 'inline-block',
             'verticalAlign': 'top'
         }),
-        
+
         html.Div([
             html.H4("Уравнение регрессии"),
             html.H3(equation, style={'color': '#e74c3c', 'textAlign': 'center'}),
@@ -761,7 +823,7 @@ def update_regression_analysis(target, feature):
             'marginLeft': '4%'
         })
     ])
-    
+
     # Контейнер с графиками
     plots_html = html.Div([
         html.Div([
@@ -770,7 +832,296 @@ def update_regression_analysis(target, feature):
             html.Div(dcc.Graph(figure=fig_actual_vs_pred), style={"width": "33%", "display": "inline-block"})
         ], style={"display": "flex", "flexDirection": "row", "justifyContent": "space-around"})
     ])
-    
+
+    return metrics_html, plots_html
+
+
+# ==================== CALLBACK: КЛАССИФИКАЦИЯ ====================
+@app.callback(
+    [Output("classification-metrics", "children"),
+     Output("classification-plots-container", "children")],
+    [Input("svm-kernel", "value"),
+     Input("svm-C", "value"),
+     Input("test-size", "value")]
+)
+def update_classification_analysis(kernel, C_slider, test_size_percent):
+    # Преобразуем значения
+    C = 10 ** C_slider
+    test_size = test_size_percent / 100
+
+    # Подготовка данных
+    X = df[num_cols].values
+    y = df['Class_encoded'].values
+
+    # Стандартизация
+    scaler_clf = StandardScaler()
+    X_scaled = scaler_clf.fit_transform(X)
+
+    # Разделение на train/test
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_scaled, y, test_size=test_size, random_state=42, stratify=y
+    )
+
+    # Обучение SVM
+    svm_model = SVC(kernel=kernel, C=C, probability=True, random_state=42)
+    svm_model.fit(X_train, y_train)
+
+    # Предсказания
+    y_pred = svm_model.predict(X_test)
+    y_proba = svm_model.predict_proba(X_test)
+
+    # Метрики
+    cm = confusion_matrix(y_test, y_pred)
+    report = classification_report(y_test, y_pred, output_dict=True, 
+                                   target_names=label_encoder.classes_)
+
+    # Точность модели
+    accuracy = report['accuracy']
+
+    # ====== ВИЗУАЛИЗАЦИИ ======
+
+    # 1. CONFUSION MATRIX
+    fig_cm = go.Figure(data=go.Heatmap(
+        z=cm,
+        x=label_encoder.classes_,
+        y=label_encoder.classes_,
+        text=cm,
+        texttemplate="%{text}",
+        textfont={"size": 14},
+        colorscale='Blues',
+        showscale=True
+    ))
+    fig_cm.update_layout(
+        title=f'Confusion Matrix (Accuracy: {accuracy:.3f})',
+        xaxis_title='Предсказанный класс',
+        yaxis_title='Истинный класс',
+        height=400,
+        width=400
+    )
+
+    # 2. ROC CURVE (УВЕЛИЧЕННЫЙ РАЗМЕР)
+    if len(label_encoder.classes_) == 2:
+        # Бинарная классификация
+        fpr, tpr, _ = roc_curve(y_test, y_proba[:, 1])
+        roc_auc = auc(fpr, tpr)
+
+        fig_roc = go.Figure()
+        fig_roc.add_trace(go.Scatter(
+            x=fpr, y=tpr,
+            mode='lines',
+            name=f'ROC curve (AUC = {roc_auc:.3f})',
+            line=dict(color='darkorange', width=3)
+        ))
+        fig_roc.add_trace(go.Scatter(
+            x=[0, 1], y=[0, 1],
+            mode='lines',
+            name='Random classifier',
+            line=dict(color='navy', width=2, dash='dash')
+        ))
+        fig_roc.update_layout(
+            title='ROC Curve',
+            xaxis_title='False Positive Rate',
+            yaxis_title='True Positive Rate',
+            height=550,
+            width=600
+        )
+    else:
+        # Мультиклассовая классификация - One-vs-Rest
+        fig_roc = go.Figure()
+        for i, class_name in enumerate(label_encoder.classes_):
+            fpr, tpr, _ = roc_curve((y_test == i).astype(int), y_proba[:, i])
+            roc_auc = auc(fpr, tpr)
+            fig_roc.add_trace(go.Scatter(
+                x=fpr, y=tpr,
+                mode='lines',
+                name=f'{class_name} (AUC = {roc_auc:.3f})',
+                line=dict(width=3)
+            ))
+        fig_roc.add_trace(go.Scatter(
+            x=[0, 1], y=[0, 1],
+            mode='lines',
+            name='Random',
+            line=dict(color='black', width=2, dash='dash')
+        ))
+        fig_roc.update_layout(
+            title='ROC Curves (One-vs-Rest)',
+            xaxis_title='False Positive Rate',
+            yaxis_title='True Positive Rate',
+            height=550,
+            width=600
+        )
+
+    # 3. PRECISION-RECALL CURVE (УВЕЛИЧЕННЫЙ РАЗМЕР)
+    if len(label_encoder.classes_) == 2:
+        precision, recall, _ = precision_recall_curve(y_test, y_proba[:, 1])
+        avg_precision = average_precision_score(y_test, y_proba[:, 1])
+
+        fig_pr = go.Figure()
+        fig_pr.add_trace(go.Scatter(
+            x=recall, y=precision,
+            mode='lines',
+            name=f'PR curve (AP = {avg_precision:.3f})',
+            line=dict(color='blue', width=3)
+        ))
+        fig_pr.update_layout(
+            title='Precision-Recall Curve',
+            xaxis_title='Recall',
+            yaxis_title='Precision',
+            height=550,
+            width=600
+        )
+    else:
+        # Мультиклассовая - One-vs-Rest
+        fig_pr = go.Figure()
+        for i, class_name in enumerate(label_encoder.classes_):
+            precision, recall, _ = precision_recall_curve(
+                (y_test == i).astype(int), y_proba[:, i]
+            )
+            avg_precision = average_precision_score(
+                (y_test == i).astype(int), y_proba[:, i]
+            )
+            fig_pr.add_trace(go.Scatter(
+                x=recall, y=precision,
+                mode='lines',
+                name=f'{class_name} (AP = {avg_precision:.3f})',
+                line=dict(width=3)
+            ))
+        fig_pr.update_layout(
+            title='Precision-Recall Curves (One-vs-Rest)',
+            xaxis_title='Recall',
+            yaxis_title='Precision',
+            height=550,
+            width=600
+        )
+
+    # 4. FEATURE IMPORTANCE (через permutation importance)
+    perm_importance = permutation_importance(
+        svm_model, X_test, y_test, n_repeats=10, random_state=42
+    )
+    importance_df = pd.DataFrame({
+        'Feature': num_cols,
+        'Importance': perm_importance.importances_mean
+    }).sort_values('Importance', ascending=False)
+
+    fig_importance = px.bar(
+        importance_df, x='Importance', y='Feature',
+        orientation='h',
+        title='Feature Importance (Permutation)',
+        labels={'Importance': 'Средняя важность', 'Feature': 'Признак'}
+    )
+    fig_importance.update_layout(height=400, width=500)
+
+    # 5. SCATTER PLOT с классами (PCA для 2D визуализации)
+    pca_viz = PCA(n_components=2)
+    X_pca = pca_viz.fit_transform(X_scaled)
+
+    # Создаем DataFrame для визуализации
+    scatter_df = pd.DataFrame({
+        'PC1': X_pca[:, 0],
+        'PC2': X_pca[:, 1],
+        'Class': df[target_col]
+    })
+
+    fig_scatter_class = px.scatter(
+        scatter_df, x='PC1', y='PC2', color='Class',
+        title=f'Диаграмма рассеяния классов (PCA)<br>PC1: {pca_viz.explained_variance_ratio_[0]:.1%}, PC2: {pca_viz.explained_variance_ratio_[1]:.1%}',
+        labels={'PC1': f'PC1 ({pca_viz.explained_variance_ratio_[0]:.1%})',
+                'PC2': f'PC2 ({pca_viz.explained_variance_ratio_[1]:.1%})'}
+    )
+    fig_scatter_class.update_layout(height=450, width=550)
+
+    # ====== МЕТРИКИ ======
+    metrics_html = html.Div([
+        html.Div([
+            html.H4("Параметры модели SVM"),
+            html.P(f"Ядро: {kernel}"),
+            html.P(f"C (регуляризация): {C:.2f}"),
+            html.P(f"Размер тестовой выборки: {test_size_percent}%"),
+            html.P(f"Размер обучающей выборки: {100-test_size_percent}%"),
+        ], style={
+            'border': '1px solid #3498db',
+            'padding': '15px',
+            'borderRadius': '5px',
+            'backgroundColor': '#ebf5fb',
+            'width': '30%',
+            'display': 'inline-block',
+            'verticalAlign': 'top'
+        }),
+
+        html.Div([
+            html.H4("Метрики классификации"),
+            html.P(f"Accuracy: {accuracy:.4f}"),
+            html.P(f"Precision (среднее): {report['weighted avg']['precision']:.4f}"),
+            html.P(f"Recall (среднее): {report['weighted avg']['recall']:.4f}"),
+            html.P(f"F1-Score (среднее): {report['weighted avg']['f1-score']:.4f}"),
+        ], style={
+            'border': '1px solid #27ae60',
+            'padding': '15px',
+            'borderRadius': '5px',
+            'backgroundColor': '#eafaf1',
+            'width': '30%',
+            'display': 'inline-block',
+            'verticalAlign': 'top',
+            'marginLeft': '3%'
+        }),
+
+        html.Div([
+            html.H4("Классификационный отчет"),
+            dash_table.DataTable(
+                data=[
+                    {
+                        'Класс': class_name,
+                        'Precision': f"{metrics['precision']:.3f}",
+                        'Recall': f"{metrics['recall']:.3f}",
+                        'F1-Score': f"{metrics['f1-score']:.3f}",
+                        'Support': int(metrics['support'])
+                    }
+                    for class_name, metrics in report.items()
+                    if class_name not in ['accuracy', 'macro avg', 'weighted avg']
+                ],
+                columns=[
+                    {"name": col, "id": col} 
+                    for col in ['Класс', 'Precision', 'Recall', 'F1-Score', 'Support']
+                ],
+                style_table={"overflowX": "auto"},
+                style_cell={"textAlign": "center", 'padding': '8px'},
+                style_header={'backgroundColor': '#d5dbdb', 'fontWeight': 'bold'}
+            ),
+        ], style={
+            'border': '1px solid #e67e22',
+            'padding': '15px',
+            'borderRadius': '5px',
+            'backgroundColor': '#fef5e7',
+            'width': '33%',
+            'display': 'inline-block',
+            'verticalAlign': 'top',
+            'marginLeft': '3%'
+        })
+    ])
+
+    # ====== КОНТЕЙНЕР С ГРАФИКАМИ ======
+    plots_html = html.Div([
+        # Первый ряд: Confusion Matrix, ROC (БОЛЬШОЙ), PR-Curve (БОЛЬШОЙ)
+        html.Div([
+            html.Div(dcc.Graph(figure=fig_cm), 
+                    style={"width": "25%", "display": "inline-block"}),
+            html.Div(dcc.Graph(figure=fig_roc), 
+                    style={"width": "37%", "display": "inline-block"}),
+            html.Div(dcc.Graph(figure=fig_pr), 
+                    style={"width": "37%", "display": "inline-block"})
+        ], style={"display": "flex", "flexDirection": "row", 
+                 "justifyContent": "space-around", "marginBottom": "20px"}),
+
+        # Второй ряд: Feature Importance и Scatter Plot
+        html.Div([
+            html.Div(dcc.Graph(figure=fig_importance), 
+                    style={"width": "48%", "display": "inline-block"}),
+            html.Div(dcc.Graph(figure=fig_scatter_class), 
+                    style={"width": "48%", "display": "inline-block"})
+        ], style={"display": "flex", "flexDirection": "row", 
+                 "justifyContent": "space-around"})
+    ])
+
     return metrics_html, plots_html
 
 
