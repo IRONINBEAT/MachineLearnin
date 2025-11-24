@@ -27,15 +27,15 @@ X_scaled = scaler.fit_transform(X)
 
 # Создание приложения Dash
 app = dash.Dash(__name__)
-app.title = "Fish Dataset Clustering Dashboard"
+app.title = "Дашборд кластеризации рыб"
 
 app.layout = html.Div([
-    html.H1("Fish Dataset Clustering Analysis", 
+    html.H1("Дашборд кластеризации рыб", 
             style={'textAlign': 'center', 'color': '#2C3E50', 'marginBottom': 30}),
     
     html.Div([
         html.Div([
-            html.Label("Number of Clusters (K-means):"),
+            html.Label("Количество кластеров (K-средних):"),
             dcc.Slider(
                 id='kmeans-slider',
                 min=2,
@@ -47,7 +47,7 @@ app.layout = html.Div([
         ], className='six columns', style={'padding': 20}),
         
         html.Div([
-            html.Label("Number of Clusters (Hierarchical):"),
+            html.Label("Количество кластеров (Иерархический):"),
             dcc.Slider(
                 id='hierarchical-slider',
                 min=2,
@@ -105,12 +105,12 @@ def update_elbow_plot(n_clusters):
     ))
     
     fig.add_vline(x=n_clusters, line_dash="dash", line_color="green", 
-                  annotation_text=f"Selected K={n_clusters}")
+                  annotation_text=f"Выбранное K={n_clusters}")
     
     fig.update_layout(
-        title='Elbow Method for Optimal K',
-        xaxis_title='Number of Clusters',
-        yaxis_title='Within-Cluster Sum of Squares (WCSS)',
+        title='Метод локтя для оптимального k',
+        xaxis_title='Количество кластеров',
+        yaxis_title='Сумма квадратов внутрикластерных расстояний (WCSS)',
         template='plotly_white'
     )
     
@@ -142,12 +142,12 @@ def update_silhouette_analysis(n_clusters):
     ))
     
     fig.add_vline(x=n_clusters, line_dash="dash", line_color="green",
-                  annotation_text=f"Selected K={n_clusters}")
+                  annotation_text=f"Выбранное K={n_clusters}")
     
     fig.update_layout(
-        title='Silhouette Analysis for Optimal K',
-        xaxis_title='Number of Clusters',
-        yaxis_title='Silhouette Score',
+        title='Метод силуэта для оптимального k',
+        xaxis_title='Количество кластеров',
+        yaxis_title='Значение метрики среднего силуэта',
         template='plotly_white'
     )
     
@@ -164,10 +164,6 @@ def update_scatter_plot(kmeans_k, hierarchical_k):
     kmeans = KMeans(n_clusters=kmeans_k, random_state=42, n_init=10)
     kmeans_labels = kmeans.fit_predict(X_scaled)
     
-    # Иерархическая кластеризация
-    hierarchical = AgglomerativeClustering(n_clusters=hierarchical_k)
-    hierarchical_labels = hierarchical.fit_predict(X_scaled)
-    
     # Используем исходные данные для визуализации
     x_axis, y_axis = X_scaled[:, 0], X_scaled[:, 1]
     x_label, y_label = 'Standardized Length', 'Standardized Weight'
@@ -181,7 +177,7 @@ def update_scatter_plot(kmeans_k, hierarchical_k):
             x=x_axis[mask],
             y=y_axis[mask],
             mode='markers',
-            name=f'K-means Cluster {cluster}',
+            name=f'K-средних кластер {cluster}',
             marker=dict(size=8, opacity=0.7),
             legendgroup='kmeans'
         ))
@@ -194,12 +190,12 @@ def update_scatter_plot(kmeans_k, hierarchical_k):
         y=centroids_vis[:, 1],
         mode='markers',
         marker=dict(size=15, symbol='x', color='black', line=dict(width=2)),
-        name='K-means Centroids',
+        name='K-средних центроиды',
         legendgroup='kmeans'
     ))
     
     fig.update_layout(
-        title=f'K-means Clustering (K={kmeans_k})',
+        title=f'K-средних кластеризация (K={kmeans_k})',
         xaxis_title=x_label,
         yaxis_title=y_label,
         template='plotly_white',
@@ -242,9 +238,9 @@ def update_dendrogram(n_clusters):
         )
     
     fig.update_layout(
-        title=f'Hierarchical Clustering Dendrogram (Sample of {sample_size} fish)',
-        xaxis_title='Samples',
-        yaxis_title='Distance',
+        title=f'Дендрограмма иерархическая кластеризация (Выборка {sample_size} рыб)',
+        xaxis_title='Наблюдения',
+        yaxis_title='Расстояние',
         template='plotly_white',
         height=500,
         showlegend=False
@@ -254,47 +250,7 @@ def update_dendrogram(n_clusters):
     if n_clusters > 1:
         cutoff_height = Z[-(n_clusters-1), 2]
         fig.add_hline(y=cutoff_height, line_dash="dash", line_color="red",
-                     annotation_text=f"Cutoff: {cutoff_height:.2f}")
-    
-    return fig
-
-# Альтернативная простая дендрограмма
-def create_simple_dendrogram(n_clusters):
-    # Используем подвыборку
-    sample_size = min(50, len(X_scaled))
-    indices = np.random.choice(len(X_scaled), sample_size, replace=False)
-    X_sample = X_scaled[indices]
-    
-    # Вычисляем linkage matrix
-    Z = linkage(X_sample, method='ward')
-    
-    # Создаем фигуру вручную
-    fig = go.Figure()
-    
-    # Функция для отрисовки дендрограммы
-    def plot_dendrogram(icoord, dcoord, color):
-        for xs, ys, col in zip(icoord, dcoord, color):
-            fig.add_trace(go.Scatter(
-                x=xs, y=ys,
-                mode='lines',
-                line=dict(color=col, width=2),
-                showlegend=False
-            ))
-    
-    # Получаем данные дендрограммы
-    from scipy.cluster.hierarchy import dendrogram as scipy_dendrogram
-    dendro_data = scipy_dendrogram(Z, no_plot=True)
-    
-    # Отрисовываем дендрограмму
-    plot_dendrogram(dendro_data['icoord'], dendro_data['dcoord'], dendro_data['color_list'])
-    
-    fig.update_layout(
-        title=f'Hierarchical Clustering Dendrogram (K={n_clusters})',
-        xaxis_title='Samples',
-        yaxis_title='Distance',
-        template='plotly_white',
-        height=500
-    )
+                     annotation_text=f"Отсечка: {cutoff_height:.2f}")
     
     return fig
 
@@ -327,7 +283,7 @@ def update_heatmap(n_clusters):
         df_heatmap[['Length', 'Weight']].T,
         aspect='auto',
         color_continuous_scale='RdBu_r',
-        title=f'Heatmap: Features vs Samples (K={n_clusters}, {sample_size} samples)'
+        title=f'Тепловая карта: Признаки vs Наблюдения (K={n_clusters}, {sample_size} наблюдений)'
     )
     
     # Добавляем разметку кластеров
@@ -351,15 +307,15 @@ def update_heatmap(n_clusters):
         )
     
     fig.update_layout(
-        xaxis_title='Samples (sorted by cluster)',
-        yaxis_title='Features',
+        xaxis_title='Наблюдения (отсортировано по кластеру)',
+        yaxis_title='Признаки',
         template='plotly_white',
         height=500
     )
     
     return fig
 
-# Silhouette plot
+# Обновленный Silhouette plot в указанном формате
 @app.callback(
     Output('silhouette-plot', 'figure'),
     Input('kmeans-slider', 'value')
@@ -368,51 +324,90 @@ def update_silhouette_plot(n_clusters):
     kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
     cluster_labels = kmeans.fit_predict(X_scaled)
     
+    # Проверяем количество кластеров
+    n_clusters_actual = len(set(cluster_labels))
+    if n_clusters_actual < 2:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="Недостаточно кластеров для построения силуэтной диаграммы!",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, xanchor='center', yanchor='middle',
+            showarrow=False,
+            font=dict(size=16)
+        )
+        fig.update_layout(
+            title='Силуэтный график',
+            template='plotly_white',
+            height=500
+        )
+        return fig
+    
     # Вычисляем силуэтные коэффициенты
     silhouette_vals = silhouette_samples(X_scaled, cluster_labels)
+    silhouette_avg = silhouette_score(X_scaled, cluster_labels)
     
     fig = go.Figure()
     
     y_lower = 10
-    for i in range(n_clusters):
+    colors = px.colors.qualitative.Set1
+    
+    for i in range(n_clusters_actual):
         ith_cluster_silhouette_vals = silhouette_vals[cluster_labels == i]
         ith_cluster_silhouette_vals.sort()
         
         size_cluster_i = ith_cluster_silhouette_vals.shape[0]
         y_upper = y_lower + size_cluster_i
         
+        # Создаем заполненную область для каждого кластера
+        x_vals = np.concatenate([[0], ith_cluster_silhouette_vals, [0]])
+        y_vals = np.concatenate([[y_lower], np.arange(y_lower, y_upper), [y_upper-1]])
+        
         fig.add_trace(go.Scatter(
-            x=ith_cluster_silhouette_vals,
-            y=np.arange(y_lower, y_upper),
-            mode='markers',
-            name=f'Cluster {i}',
-            marker=dict(size=4)
+            x=x_vals,
+            y=y_vals,
+            fill='toself',
+            fillcolor=colors[i % len(colors)],
+            line=dict(color=colors[i % len(colors)]),
+            name=f'Кластер {i}',
+            showlegend=True,
+            opacity=0.7
         ))
         
-        # Добавляем среднее значение силуэта для кластера
-        fig.add_trace(go.Scatter(
-            x=[silhouette_vals[cluster_labels == i].mean()],
-            y=[(y_lower + y_upper) / 2],
-            mode='markers',
-            marker=dict(size=10, symbol='x', color='red'),
-            name=f'Cluster {i} Avg',
-            showlegend=False
-        ))
+        # Добавляем метку кластера
+        cluster_center_y = y_lower + 0.5 * size_cluster_i
+        fig.add_annotation(
+            x=0.01,
+            y=cluster_center_y,
+            text=str(i),
+            showarrow=False,
+            font=dict(size=12, color='black'),
+            bgcolor='white',
+            bordercolor='black',
+            borderwidth=1,
+            borderpad=2,
+            opacity=0.8
+        )
         
         y_lower = y_upper + 10
     
-    # Средний силуэтный коэффициент
-    avg_silhouette = silhouette_score(X_scaled, cluster_labels)
-    fig.add_vline(x=avg_silhouette, line_dash="dash", line_color="red",
-                 annotation_text=f"Overall Avg: {avg_silhouette:.3f}")
+    # Добавляем вертикальную линию среднего значения силуэта
+    fig.add_vline(
+        x=silhouette_avg,
+        line_dash="dash",
+        line_color="red",
+        annotation_text=f"Средний силуэт: {silhouette_avg:.3f}",
+        annotation_position="top right"
+    )
     
     fig.update_layout(
-        title=f'Silhouette Plot (K={n_clusters})',
-        xaxis_title='Silhouette Coefficient Values',
-        yaxis_title='Cluster Label',
+        title=f'Силуэтный график (K={n_clusters})',
+        xaxis_title='Значение силуэта',
+        yaxis_title='Кластеры',
         template='plotly_white',
         height=500,
-        showlegend=True
+        showlegend=True,
+        xaxis=dict(range=[0, 1]),
+        yaxis=dict(showticklabels=False)  # Скрываем числовые метки на оси Y
     )
     
     return fig
@@ -439,11 +434,11 @@ def update_cluster_stats(n_clusters):
         top_species = species_counts.head(3).to_dict()
         
         stats = html.Div([
-            html.H4(f"Cluster {cluster}", style={'color': '#2C3E50'}),
-            html.P(f"📊 Number of fish: {len(cluster_data)}"),
-            html.P(f"📏 Average length: {cluster_data['length'].mean():.2f}"),
-            html.P(f"⚖️ Average weight: {cluster_data['weight'].mean():.2f}"),
-            html.P(f"🐟 Top species: {top_species}"),
+            html.H4(f"Кластер {cluster}", style={'color': '#2C3E50'}),
+            html.P(f"📊 Количество наблюдений: {len(cluster_data)}"),
+            html.P(f"📏 Средний length: {cluster_data['length'].mean():.2f}"),
+            html.P(f"⚖️ Средний weight: {cluster_data['weight'].mean():.2f}"),
+            html.P(f"🐟 Популярный вид: {top_species}"),
             html.Hr()
         ], style={'backgroundColor': '#f8f9fa', 'padding': '15px', 'margin': '10px', 'borderRadius': '5px'})
         cluster_stats.append(stats)
@@ -490,4 +485,4 @@ app.index_string = '''
 '''
 
 if __name__ == '__main__':
-    app.run(debug=True, port=8050)
+    app.run(debug=True, port=8051)

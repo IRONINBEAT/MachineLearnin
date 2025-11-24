@@ -61,7 +61,7 @@ for col in desc_stats.columns:
 # ------------------------------
 
 app = Dash(__name__)
-
+app.title = "Дашборд МАД"
 app.layout = html.Div([
     html.H1("Дашборд: Дескриптивный анализ", style={"textAlign": "center"}),
 
@@ -951,7 +951,7 @@ def update_classification_analysis(kernel, C_slider, test_size_percent):
             width=600
         )
 
-    # 3. PRECISION-RECALL CURVE (УВЕЛИЧЕННЫЙ РАЗМЕР)
+    # 3. PRECISION-RECALL CURVE 
     if len(label_encoder.classes_) == 2:
         precision, recall, _ = precision_recall_curve(y_test, y_proba[:, 1])
         avg_precision = average_precision_score(y_test, y_proba[:, 1])
@@ -1127,7 +1127,7 @@ def update_classification_analysis(kernel, C_slider, test_size_percent):
 
 # ------------------------------
 # RUN APP
-# ------------------------------
+# ------------------------------ы
 
 if __name__ == "__main__":
     app.run(debug=True)
